@@ -1,0 +1,7 @@
+choice:
+  embedding_size: [32, 64, 128, 256]
+  step: [1, 2, 3]
+  loss_type: ['CE', 'BPR']
+
+loguniform:
+  learning_rate: [-10, -1]

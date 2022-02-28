@@ -1,0 +1,9 @@
+choice:
+  embedding_size: [32, 64, 128, 256]
+  hidden_size: [64, 128, 256]
+  n_layers: [1, 2, 3]
+  dropout_probs: [[0.25,0.5], [0.5,0.5], [0.25,0.25]]
+  loss_type: ['CE', 'BPR']
+
+loguniform:
+  learning_rate: [-10, -1]
