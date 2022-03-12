@@ -1,0 +1,11 @@
+# filtering config (all methods)
+min_session_length: 2
+min_item_support: 5
+
+# default config
+days_test: 1
+days_val: 1
+days_train: 90
+num_slices: 5
+days_offset: 1
+days_shift: 10

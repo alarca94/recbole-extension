@@ -1,0 +1,17 @@
+# dataset config
+USER_ID_FIELD: session_id
+dataset: diginetica
+load_col:
+    inter: [session_id, item_id_list, item_id, timestamp]
+'benchmark_filename': ['train', 'val', 'test']
+'alias_of_item_id': ['item_id_list']
+
+# Training and evaluation config
+epochs: 100
+train_batch_size: 1028
+eval_batch_size: 1028
+neg_sampling: null
+metrics: ['Recall', 'MRR', 'NDCG', 'Hit', 'Precision']
+topk: [5, 10, 20]
+valid_metric: MRR@20
+metric_decimal_place: 4
