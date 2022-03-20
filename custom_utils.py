@@ -126,18 +126,26 @@ def split_data(data, days_test):
     val_from = data_end - timedelta(days=2*days_test)
 
     session_max_times = data.groupby(SESSION_COL)[TIME_COL].max()
-    session_train = session_max_times[session_max_times < val_from.timestamp()].index
-    session_val = session_max_times[val_from.timestamp() <= session_max_times < test_from.timestamp()].index
+    session_train_full = session_max_times[session_max_times < test_from.timestamp()].index
+    session_train_sub = session_max_times[session_max_times < val_from.timestamp()].index
+    cond1 = val_from.timestamp() <= session_max_times
+    cond2 = session_max_times < test_from.timestamp()
+    session_val = session_max_times[np.bitwise_and(cond1, cond2)].index
     session_test = session_max_times[session_max_times >= test_from.timestamp()].index
-    trn_data = data[np.in1d(data[SESSION_COL], session_train)]
+    trn_data_full = data[np.in1d(data[SESSION_COL], session_train_full)]
+    trn_data = data[np.in1d(data[SESSION_COL], session_train_sub)]
     val_data = data[np.in1d(data[SESSION_COL], session_val)]
     val_data = val_data[np.in1d(val_data[ITEM_COL], trn_data[ITEM_COL])]
     vslength = val_data.groupby(SESSION_COL).size()
     val_data = val_data[np.in1d(val_data[SESSION_COL], vslength[vslength >= 2].index)]
     tst_data = data[np.in1d(data[SESSION_COL], session_test)]
-    tst_data = tst_data[np.in1d(tst_data[ITEM_COL], trn_data[ITEM_COL])]
+    tst_data = tst_data[np.in1d(tst_data[ITEM_COL], trn_data_full[ITEM_COL])]
     tslength = tst_data.groupby(SESSION_COL).size()
     tst_data = tst_data[np.in1d(tst_data[SESSION_COL], tslength[tslength >= 2].index)]
+
+    print('Full Train set\n\tEvents: {}\n\tSessions: {}\n\tItems: {}'.format(len(trn_data_full),
+                                                                        trn_data_full[SESSION_COL].nunique(),
+                                                                        trn_data_full[ITEM_COL].nunique()))
 
     print('Train set\n\tEvents: {}\n\tSessions: {}\n\tItems: {}'.format(len(trn_data),
                                                                         trn_data[SESSION_COL].nunique(),
@@ -147,7 +155,7 @@ def split_data(data, days_test):
                                                                              val_data[ITEM_COL].nunique()))
     print('Test set\n\tEvents: {}\n\tSessions: {}\n\tItems: {}'.format(len(tst_data), tst_data[SESSION_COL].nunique(),
                                                                            tst_data[ITEM_COL].nunique()))
-    return trn_data, val_data, tst_data
+    return trn_data_full, trn_data, val_data, tst_data
 
 
 def augment_session(s_data):
@@ -168,82 +176,92 @@ def augment_sessions(sessions):
     return pd.DataFrame(new, columns=[SESSION_COL, ITEM_LIST_COL, ITEM_COL, TIME_COL])
 
 
-def slice_data(data, conf, dataset):
+def slice_data(data, conf, dataset, sample=False):
     for slice_id in range(0, conf['n_slices']):
-        train, val, test = split_data_slice(data, slice_id, conf['days_offset'] + (slice_id * conf['days_shift']),
-                                            conf['days_train'], conf['days_val'], conf['days_test'])
+        train_full, train, val, test = split_data_slice(data, slice_id,
+                                                        conf['days_offset'] + (slice_id * conf['days_shift']),
+                                                        conf['days_train'], conf['days_test'])
 
-        augment_and_save(train, val, test, dataset, slice_id=slice_id)
+        augment_and_save(train_full, train, val, test, dataset, slice_id=slice_id, sample=sample)
 
 
-def split_data_slice(data, slice_id, days_offset, days_train, days_val, days_test):
+def split_data_slice(data, slice_id, days_offset, days_train, days_test):
     data_start = datetime.fromtimestamp(data[TIME_COL].min(), timezone.utc)
     data_end = datetime.fromtimestamp(data[TIME_COL].max(), timezone.utc)
 
     print('Full data set {}\n\tEvents: {}\n\tSessions: {}\n\tItems: {}\n\tSpan: {} / {}'.
-          format(slice_id, len(data), data.SessionId.nunique(), data.ItemId.nunique(), data_start.isoformat(),
+          format(slice_id, len(data), data[SESSION_COL].nunique(), data[ITEM_COL].nunique(), data_start.isoformat(),
                  data_end.isoformat()))
 
     start = datetime.fromtimestamp(data[TIME_COL].min(), timezone.utc) + timedelta(days_offset)
-    middle_train = start + timedelta(days_train - days_val)
-    middle_val = middle_train + timedelta(days_val)
-    end = middle_val + timedelta(days_test)
+    middle = start + timedelta(days_train)
+    end = middle + timedelta(days_test)
 
     # prefilter the timespan
-    session_max_times = data.groupby('SessionId')[TIME_COL].max()
+    session_max_times = data.groupby(SESSION_COL)[TIME_COL].max()
     greater_start = session_max_times[session_max_times >= start.timestamp()].index
     lower_end = session_max_times[session_max_times <= end.timestamp()].index
-    data_filtered = data[np.in1d(data.SessionId, greater_start.intersection(lower_end))]
+    data_filtered = data[np.in1d(data[SESSION_COL], greater_start.intersection(lower_end))]
 
-    print('Slice data set {}\n\tEvents: {}\n\tSessions: {}\n\tItems: {}\n\tSpan: {} / {} / {} / {}'.
-          format(slice_id, len(data_filtered), data_filtered.SessionId.nunique(), data_filtered.ItemId.nunique(),
-                 start.date().isoformat(), middle_train.date().isoformat(), middle_val.date().isoformat(),
-                 end.date().isoformat()))
+    print('Slice data set {}\n\tEvents: {}\n\tSessions: {}\n\tItems: {}\n\tSpan: {} / {} / {}'.
+          format(slice_id, len(data_filtered), data_filtered[SESSION_COL].nunique(), data_filtered[ITEM_COL].nunique(),
+                 start.date().isoformat(), middle.date().isoformat(), end.date().isoformat()))
 
     # split to train and test
-    session_max_times = data_filtered.groupby('SessionId')[TIME_COL].max()
-    sessions_train = session_max_times[session_max_times < middle_train.timestamp()].index
-    sessions_val = session_max_times[middle_train.timestamp() < session_max_times < middle_val.timestamp()].index
-    sessions_test = session_max_times[session_max_times >= middle_val.timestamp()].index
+    session_max_times = data_filtered.groupby(SESSION_COL)[TIME_COL].max()
+    sessions_train = session_max_times[session_max_times < middle.timestamp()].index
+    sessions_test = session_max_times[session_max_times >= middle.timestamp()].index
 
-    train = data[np.in1d(data.SessionId, sessions_train)]
+    train_all = data[np.in1d(data[SESSION_COL], sessions_train)]
 
     print('Train set {}\n\tEvents: {}\n\tSessions: {}\n\tItems: {}\n\tSpan: {} / {}'.
-          format(slice_id, len(train), train.SessionId.nunique(), train.ItemId.nunique(), start.date().isoformat(),
-                 middle_train.date().isoformat()))
+          format(slice_id, len(train_all), train_all[SESSION_COL].nunique(), train_all[ITEM_COL].nunique(),
+                 start.date().isoformat(), middle.date().isoformat()))
 
-    val = data[np.in1d(data.SessionId, sessions_val)]
-    val = val[np.in1d(val.ItemId, val.ItemId)]
+    test = data[np.in1d(data[SESSION_COL], sessions_test)]
+    test = test[np.in1d(test[ITEM_COL], train_all[ITEM_COL])]
 
-    vslength = val.groupby('SessionId').size()
-    val = val[np.in1d(val.SessionId, vslength[vslength >= 2].index)]
-
-    print('Validation set {}\n\tEvents: {}\n\tSessions: {}\n\tItems: {}\n\tSpan: {} / {} \n\n'.
-          format(slice_id, len(val), val.SessionId.nunique(), val.ItemId.nunique(), middle_train.date().isoformat(),
-                 middle_val.date().isoformat()))
-
-    test = data[np.in1d(data.SessionId, sessions_test)]
-    test = test[np.in1d(test.ItemId, train.ItemId)]
-
-    tslength = test.groupby('SessionId').size()
-    test = test[np.in1d(test.SessionId, tslength[tslength >= 2].index)]
+    tslength = test.groupby(SESSION_COL).size()
+    test = test[np.in1d(test[SESSION_COL], tslength[tslength >= 2].index)]
 
     print('Test set {}\n\tEvents: {}\n\tSessions: {}\n\tItems: {}\n\tSpan: {} / {} \n\n'.
-          format(slice_id, len(test), test.SessionId.nunique(), test.ItemId.nunique(), middle_val.date().isoformat(),
-                 end.date().isoformat()))
+          format(slice_id, len(test), test[SESSION_COL].nunique(), test[ITEM_COL].nunique(),
+                 middle.date().isoformat(), end.date().isoformat()))
 
-    return train, val, test
+    new_middle = middle - timedelta(days_test)
+    sessions_train = session_max_times[session_max_times < new_middle.timestamp()].index
+    cond1 = new_middle.timestamp() <= session_max_times
+    cond2 = session_max_times < middle.timestamp()
+    sessions_val = session_max_times[np.bitwise_and(cond1, cond2)].index
+
+    train_sub = data[np.in1d(data[SESSION_COL], sessions_train)]
+
+    print('Sub-Train set {}\n\tEvents: {}\n\tSessions: {}\n\tItems: {}\n\tSpan: {} / {}'.
+          format(slice_id, len(train_sub), train_sub[SESSION_COL].nunique(), train_sub[ITEM_COL].nunique(),
+                 start.date().isoformat(), new_middle.date().isoformat()))
+
+    val = data[np.in1d(data[SESSION_COL], sessions_val)]
+    val = val[np.in1d(val[ITEM_COL], train_sub[ITEM_COL])]
+
+    vslength = val.groupby(SESSION_COL).size()
+    val = val[np.in1d(val[SESSION_COL], vslength[vslength >= 2].index)]
+
+    print('Validation set {}\n\tEvents: {}\n\tSessions: {}\n\tItems: {}\n\tSpan: {} / {} \n\n'.
+          format(slice_id, len(val), val[SESSION_COL].nunique(), val[ITEM_COL].nunique(), new_middle.date().isoformat(),
+                 middle.date().isoformat()))
+
+    return train_all, train_sub, val, test
 
 
 def single_split(data, config, dataset):
     print('Splitting the data...')
-    trn_data, val_data, tst_data = split_data(data, config['days_test'])
+    trn_data_full, trn_data, val_data, tst_data = split_data(data, config['days_test'])
     del data
 
-    augment_and_save(trn_data, val_data, tst_data, dataset)
+    augment_and_save(trn_data_full, trn_data, val_data, tst_data, dataset)
 
 
-def augment_and_save(trn_data, val_data, tst_data, dataset, slice_id=None):
+def augment_and_save(trn_data_full, trn_data, val_data, tst_data, dataset, slice_id=None, sample=False):
     if slice_id is None:
         mode = 'single'
         suffix = ''
@@ -251,42 +269,59 @@ def augment_and_save(trn_data, val_data, tst_data, dataset, slice_id=None):
         mode = 'slices'
         suffix = f'.{slice_id}'
 
-    if not os.path.exists(os.path.join(DATASET_PATH, mode)):
-        os.makedirs(os.path.join(DATASET_PATH, mode))
+    if sample:
+        dataset += '-sample'
 
-    if not os.path.exists(os.path.join(DATASET_PATH, mode, dataset)):
-        os.makedirs(os.path.join(DATASET_PATH, mode, dataset))
+    if not os.path.exists(os.path.join(PREFIX_PATH, DATASET_PATH, mode)):
+        os.makedirs(os.path.join(PREFIX_PATH, DATASET_PATH, mode))
+
+    if not os.path.exists(os.path.join(PREFIX_PATH, DATASET_PATH, mode, dataset)):
+        os.makedirs(os.path.join(PREFIX_PATH, DATASET_PATH, mode, dataset))
 
     print('Sorting the data...')
+    trn_data_full.sort_values(by=TIME_COL, inplace=True)
     trn_data.sort_values(by=TIME_COL, inplace=True)
     val_data.sort_values(by=TIME_COL, inplace=True)
     tst_data.sort_values(by=TIME_COL, inplace=True)
 
+    select_cols = lambda s: (s[ITEM_COL].tolist(), s[TIME_COL].tolist())
+    print('Augmenting Full Training data...')
+    trn_sessions_full = trn_data_full.groupby(SESSION_COL).apply(select_cols).tolist()
+    trn_data_full = augment_sessions(trn_sessions_full)
+
+    print('Saving Full Training data...')
+    trn_data_full.to_csv(os.path.join(PREFIX_PATH, DATASET_PATH, mode, dataset, f'{dataset}.train_all{suffix}.inter'),
+                         index=False, sep='\t')
+    del trn_data_full, trn_sessions_full
+
     print('Augmenting Training data...')
-    trn_sessions = trn_data.groupby(SESSION_COL).apply(lambda s: (s[ITEM_COL].tolist(), s[TIME_COL].tolist())).tolist()
+    trn_sessions = trn_data.groupby(SESSION_COL).apply(select_cols).tolist()
     trn_data = augment_sessions(trn_sessions)
 
     print('Saving Training data...')
-    trn_data.to_csv(os.path.join('./dataset', dataset, mode, f'{dataset}.train{suffix}.inter'), index=False, sep='\t')
+    trn_data.to_csv(os.path.join(PREFIX_PATH, DATASET_PATH, mode, dataset, f'{dataset}.train{suffix}.inter'),
+                    index=False, sep='\t')
     del trn_data, trn_sessions
 
     print('Augmenting Validation data...')
-    val_sessions = val_data.groupby(SESSION_COL).apply(lambda s: (s[ITEM_COL].tolist(), s[TIME_COL].tolist())).tolist()
+    val_sessions = val_data.groupby(SESSION_COL).apply(select_cols).tolist()
     val_data = augment_sessions(val_sessions)
 
     print('Saving Validation data...')
-    val_data.to_csv(os.path.join('./dataset', dataset, mode, f'{dataset}.val{suffix}.inter'), index=False, sep='\t')
+    val_data.to_csv(os.path.join(PREFIX_PATH, DATASET_PATH, mode, dataset, f'{dataset}.val{suffix}.inter'),
+                    index=False, sep='\t')
     del val_data, val_sessions
 
     print('Augmenting Test data...')
-    tst_sessions = tst_data.groupby(SESSION_COL).apply(lambda s: (s[ITEM_COL].tolist(), s[TIME_COL].tolist())).tolist()
+    tst_sessions = tst_data.groupby(SESSION_COL).apply(select_cols).tolist()
     tst_data = augment_sessions(tst_sessions)
 
     print('Saving Test data...')
-    tst_data.to_csv(os.path.join('./dataset', dataset, mode, f'{dataset}.test{suffix}.inter'), index=False, sep='\t')
+    tst_data.to_csv(os.path.join(PREFIX_PATH, DATASET_PATH, mode, dataset, f'{dataset}.test{suffix}.inter'),
+                    index=False, sep='\t')
 
 
-def prepare_dataset(dataset, config=None, slices=False):
+def prepare_dataset(dataset, config=None, slices=False, sample=False):
     def prep_time(data):
         data['time'] = data.time.fillna(0).astype(np.int64)
         data['date'] = data.date.apply(lambda x: datetime.strptime(x, '%Y-%m-%d'))
@@ -297,8 +332,12 @@ def prepare_dataset(dataset, config=None, slices=False):
         return data
 
     if config is None:
-        with open(os.path.join('./config/data/preprocessing', f'{dataset}.yaml'), 'r') as f:
-            config = yaml.safe_load(f)
+        if sample:
+            with open(os.path.join('./config/data/preprocessing', f'sample.yaml'), 'r') as f:
+                config = yaml.safe_load(f)
+        else:
+            with open(os.path.join('./config/data/preprocessing', f'{dataset}.yaml'), 'r') as f:
+                config = yaml.safe_load(f)
 
     print('Reading the data...')
     data = pd.read_csv(os.path.join(PREFIX_PATH, DATASET_PATH, dataset, f'{dataset}.inter'), delimiter='\t')
@@ -312,10 +351,10 @@ def prepare_dataset(dataset, config=None, slices=False):
     data[ITEM_COL] = data[ITEM_COL].astype('category').cat.codes + 1
 
     if slices:
-        slice_data(data, config)
+        slice_data(data, config['slices'], dataset, sample)
 
     else:
-        single_split(data, config)
+        single_split(data, config['single'], dataset)
 
     print('Done')
 

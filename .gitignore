@@ -58,7 +58,7 @@ recbole/model/sequential_recommender/stamp.py
 recbole/model/sequential_recommender/transrec.py
 run_example/
 tests/
-dataset/
+./dataset/
 run_hyper.py
 run_recbole.py
 run_test.sh

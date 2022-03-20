@@ -54,9 +54,11 @@ class CustomTrainer(Trainer):
                 iter_data.set_postfix_str(set_color('GPU RAM: ' + get_gpu_usage(self.device), 'yellow'))
         return total_loss
 
-    def fit(self, train_data, valid_data=None, verbose=True, saved=True, show_progress=False, callback_fn=None):
+    def fit(self, train_data, valid_data=None, verbose=True, saved=True, show_progress=False, callback_fn=None,
+            use_early_stopping=True):
         """
-        Unlike Trainer class, this custom trainer returns the time and memory consumption as well
+        Unlike Trainer class, this custom trainer returns the time and memory consumption as well and makes the use
+        of Early Stopping optional
         """
         if saved and self.start_epoch >= self.epochs:
             self._save_checkpoint(-1)
@@ -116,7 +118,7 @@ class CustomTrainer(Trainer):
                 if callback_fn:
                     callback_fn(epoch_idx, valid_score)
 
-                if stop_flag:
+                if stop_flag and use_early_stopping:
                     stop_output = 'Finished training, best eval result in epoch %d' % \
                                   (epoch_idx - self.cur_step * self.eval_step)
                     if verbose:
