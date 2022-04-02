@@ -1,6 +1,0 @@
-choice:
-  embedding_size: [32, 64, 128, 256]
-  loss_type: ['CE', 'BPR']
-
-loguniform:
-  learning_rate: [-10, -1]

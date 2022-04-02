@@ -1,0 +1,9 @@
+choice:
+  embedding_size: [32, 64, 128, 256]
+  loss_type: ['CE', 'BPR']
+
+loguniform:
+  learning_rate: [-9, -1]
+
+intquniform:
+  epochs: [5, 30, 1]

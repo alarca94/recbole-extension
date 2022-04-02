@@ -1,9 +1,10 @@
 # dataset config
 USER_ID_FIELD: session_id
 dataset: diginetica
+split_type: slices
 load_col:
     inter: [session_id, item_id_list, item_id, timestamp]
-'benchmark_filename': ['train', 'val', 'test']
+'benchmark_filename': ['train', 'val','test']
 'alias_of_item_id': ['item_id_list']
 
 # Training and evaluation config

@@ -1,6 +1,7 @@
 # dataset config
 USER_ID_FIELD: session_id
 dataset: nowplaying
+split_type: slices
 load_col:
     inter: [session_id, item_id_list, item_id]
 # 'benchmark_filename': ['train', 'test']

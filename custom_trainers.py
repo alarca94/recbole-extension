@@ -4,6 +4,7 @@ import torch
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
 
+from custom_utils import get_tensorboard
 from recbole.data import FullSortEvalDataLoader
 from recbole.trainer import Trainer
 from recbole.utils import set_color, get_gpu_usage, early_stopping, dict2str, EvaluatorType
@@ -14,6 +15,8 @@ class CustomTrainer(Trainer):
         super(CustomTrainer, self).__init__(config, model)
         if self.best_valid_result is None:
             self.best_valid_result = {}
+
+        self.tensorboard = get_tensorboard(self.logger, model.__class__.__name__)
         self.best_valid_result['avg_trn_time'] = self.best_valid_result.get('avg_trn_time', 0) * self.start_epoch
         self.best_valid_result['avg_val_time'] = self.best_valid_result.get('avg_val_time', 0) * self.start_epoch
         self.best_valid_result['avg_tst_time'] = self.best_valid_result.get('avg_tst_time', 0) * self.start_epoch
@@ -55,7 +58,7 @@ class CustomTrainer(Trainer):
         return total_loss
 
     def fit(self, train_data, valid_data=None, verbose=True, saved=True, show_progress=False, callback_fn=None,
-            use_early_stopping=True):
+            use_early_stopping=False):
         """
         Unlike Trainer class, this custom trainer returns the time and memory consumption as well and makes the use
         of Early Stopping optional

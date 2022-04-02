@@ -4,7 +4,9 @@ import re
 import numpy as np
 from hyperopt.pyll import scope
 
+from custom_constants import *
 from custom_trainers import CustomTrainer
+from custom_utils import get_available_gpu_memory
 from recbole.config import Config
 from recbole.data import data_preparation, create_dataset, get_dataloader, create_samplers
 from recbole.utils import get_model, init_seed
@@ -75,6 +77,9 @@ def objective_function(config_dict=None, config_file_list=None, verbose=False, s
         show_progress (bool, optional): Whether to show trainer.fit() progress or not.
         is_val (bool, optional): Whether the objective function is used for validation or testing
     """
+    config_dict['gpu_id'] = np.argmin(get_available_gpu_memory())
+    config_dict['checkpoint_dir'] = os.path.join(PREFIX_PATH, CHECKPOINT_PATH)
+
     # Check whether the loss function is consistent with the negative sampling configuration
     if config_dict['loss_type'] == 'BPR' and config_dict.get('neg_sampling', None) is None:
         config_dict['neg_sampling'] = {'uniform': 1}
@@ -82,6 +87,7 @@ def objective_function(config_dict=None, config_file_list=None, verbose=False, s
     config = Config(config_dict=config_dict, config_file_list=config_file_list)
     init_seed(config['seed'], config['reproducibility'])
     logging.basicConfig(level=logging.ERROR)
+    config['data_path'] = os.path.join(PREFIX_PATH, DATASET_PATH, config['split_type'], config['dataset'])
 
     if 'slices' in config['data_path']:
         n_slices = max([int(re.sub('.*\.(\d+)\..*', '\g<1>', s)) for s in os.listdir(config['data_path'])]) + 1
@@ -155,3 +161,65 @@ def run_single(config, verbose, show_progress, is_val):
 
     _, _ = trainer.fit(trn_loader, None, verbose=verbose, saved=False, show_progress=show_progress)
     return trainer.evaluate(tst_loader, load_best_model=False)
+
+
+def tests_function(config_dict=None, config_file_list=None, verbose=False, show_progress=False, is_val=True):
+    r""" The test objective_function used in HyperTuning
+
+    Args:
+        config_dict (dict, optional): Parameters dictionary used to modify experiment parameters. Defaults to ``None``.
+        config_file_list (list, optional): Config files used to modify experiment parameters. Defaults to ``None``.
+        verbose (bool, optional): Whether to print single iteration progress. Defaults to ``False``.
+        show_progress (bool, optional): Whether to show trainer.fit() progress or not.
+        is_val (bool, optional): Whether the objective function is used for validation or testing
+    """
+    # Check whether the loss function is consistent with the negative sampling configuration
+    if config_dict['loss_type'] == 'BPR' and config_dict.get('neg_sampling', None) is None:
+        config_dict['neg_sampling'] = {'uniform': 1}
+
+    config = Config(config_dict=config_dict, config_file_list=config_file_list)
+    init_seed(config['seed'], config['reproducibility'])
+    logging.basicConfig(level=logging.ERROR)
+
+    if 'slices' in config['data_path']:
+        n_slices = 1
+
+        max_result_cols = ['max_gpu_usage']
+        avg_results = dict()
+        for split in range(n_slices):
+            if is_val:
+                config['benchmark_filename'] = [f'train.{split}', f'val.{split}']
+            else:
+                config['benchmark_filename'] = [f'train_all.{split}', f'test.{split}']
+
+            result = run_single(config, verbose, show_progress, is_val)
+            for k in result:
+                if k in max_result_cols:
+                    avg_results[k] = max(result[k], avg_results.get(k, 0))
+                else:
+                    avg_results[k] = result[k] + avg_results.get(k, 0)
+
+        for k in avg_results:
+            if k not in max_result_cols:
+                avg_results[k] /= n_slices
+
+        if is_val:
+            return {
+                'best_valid_score': avg_results[config['valid_metric'].lower()],
+                'valid_score_bigger': config['valid_metric_bigger'],
+                'best_valid_result': avg_results,
+                'test_result': dict()
+            }
+
+        else:
+            return {
+                'best_valid_score': None,
+                'valid_score_bigger': None,
+                'best_valid_result': dict(),
+                'test_result': avg_results
+            }
+
+    elif 'single' in config['data_path']:
+        raise NotImplementedError('Only "slices" mode is implemented in this objective_function')
+
+    raise NotImplementedError('Only "single" or "slices" modes are implemented in this objective_function')

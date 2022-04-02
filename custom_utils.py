@@ -8,7 +8,11 @@ import numpy as np
 
 from ast import literal_eval
 from datetime import datetime, timezone, timedelta
+
+from torch.utils.tensorboard import SummaryWriter
+
 from custom_constants import *
+from recbole.utils import get_local_time
 
 SESSION_COL = 'session_id:token'
 ITEM_COL = 'item_id:token'
@@ -400,3 +404,31 @@ def view_results():
     keep_cols = ['dataset', 'model', 'config'] + [c for c in df_results.columns if 'mrr' in c or 'hit' in c]
 
     print(df_results[keep_cols].head())
+
+
+def get_tensorboard(logger, model_name='model'):
+    r""" Creates a SummaryWriter of Tensorboard that can log PyTorch models and metrics into a directory for
+    visualization within the TensorBoard UI.
+    For the convenience of the user, the naming rule of the SummaryWriter's log_dir is the same as the logger.
+
+    Args:
+        logger: its output filename is used to name the SummaryWriter's log_dir.
+                If the filename is not available, we will name the log_dir according to the current time.
+        model_name: name of the model to put it in the folder name.
+
+    Returns:
+        SummaryWriter: it will write out events and summaries to the event file.
+    """
+    base_path = 'log_tensorboard'
+
+    dir_name = None
+    for handler in logger.handlers:
+        if hasattr(handler, "baseFilename"):
+            dir_name = os.path.basename(getattr(handler, 'baseFilename')).split('.')[0]
+            break
+    if dir_name is None:
+        dir_name = '{}-{}'.format(model_name, get_local_time())
+
+    dir_path = os.path.join(base_path, dir_name)
+    writer = SummaryWriter(dir_path)
+    return writer
